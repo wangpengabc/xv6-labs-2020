@@ -14,6 +14,7 @@
 struct thread {
   char       stack[STACK_SIZE]; /* the thread's stack */
   int        state;             /* FREE, RUNNING, RUNNABLE */
+  uint64     saved_registers[14];
 
 };
 struct thread all_thread[MAX_THREAD];
@@ -63,6 +64,8 @@ thread_schedule(void)
      * Invoke thread_switch to switch from t to next_thread:
      * thread_switch(??, ??);
      */
+    thread_switch((uint64)t->saved_registers, (uint64)current_thread->saved_registers);
+
   } else
     next_thread = 0;
 }
@@ -77,6 +80,24 @@ thread_create(void (*func)())
   }
   t->state = RUNNABLE;
   // YOUR CODE HERE
+  // $ra $sp
+  t->saved_registers[0] = (uint64)func;
+  t->saved_registers[1] = (uint64)(&t->stack[STACK_SIZE]);
+
+  // uint64 value = (uint64)func;
+  // for (int i=0; i<8; i++) {
+  //   t->stack[i] = (char)(value && 0xff);
+  //   value = value >> 8;
+  // }
+
+  // // $sp
+  // value = t->stack[MAX_THREAD];
+  // for (int i=0; i<8; i++) {
+  //   t->stack[1*8 + i] = (char)(value && 0xff);
+  //   value = value >> 8;
+  // }
+
+
 }
 
 void 
