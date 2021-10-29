@@ -109,24 +109,42 @@ main(int argc, char *argv[])
   freeblock = nmeta;     // the first free block that we can allocate
 
   for(i = 0; i < FSSIZE; i++)
-    wsect(i, zeroes);
+    wsect(i, zeroes);  // 所有的sec清0
 
-  memset(buf, 0, sizeof(buf));
+  // 将sb的内容写入super block
+  memset(buf, 0, sizeof(buf)); 
   memmove(buf, &sb, sizeof(sb));
   wsect(1, buf);
 
-  rootino = ialloc(T_DIR);
+  // 新建rootino 的inode
+  rootino = ialloc(T_DIR); 
   assert(rootino == ROOTINO);
 
+  // 往nmeta中第一个block写入
+  // 结构体为dirent，de.inum为rootino, name为"."的数据
+  // rootino的inode block数据中，
+  // rootino对应的dinode结构体, din.size + sizeof(de)，  din.addrs[0] = nmeta
+  // // [ boot block | super block | log | inode blocks |
+  //                                          free bit map | data blocks]
+  // inode blocks: 还是在dinode[0]的位置， inode.size=sizeof(de), inode.addr[0]=nmeta
+  // data blocks: | de.inum=rootino, de.name=".";| 
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
   strcpy(de.name, ".");
   iappend(rootino, &de, sizeof(de));
 
+  // 往nmeta中第一个block写入， 写入结构体为dirent, de.inum为rootino, name为 ".."的数据
+  // rootino对应的inode的size改变，增加sizeof(de), din.addrs[0] = nmeta
+  // 当前的disk状态为：
+  // // [ boot block | super block | log | inode blocks |
+  //                                          free bit map | data blocks]
+  // inode blocks: 还是在dinode[0]的位置， inode.size=sizeof(de)+sizeof(de), inode.addr[0]=nmeta
+  // data blocks: | de.inum=rootino, de.name="."; de.inum=rootino, de.name="..";| 
   bzero(&de, sizeof(de));
   de.inum = xshort(rootino);
   strcpy(de.name, "..");
   iappend(rootino, &de, sizeof(de));
+
 
   for(i = 2; i < argc; i++){
     // get rid of "user/"
@@ -150,13 +168,22 @@ main(int argc, char *argv[])
     if(shortname[0] == '_')
       shortname += 1;
 
+    // 给每个user/_xxx文件分配一个inum编号，每次illoc都会inum++，
+    // 在inode blocks区域中，inum编号对应的内存位置写入inode的初始化内容
     inum = ialloc(T_FILE);
 
+    // inode blocks: 还是在dinode[0]的位置， inode.size=sizeof(de)+sizeof(de)+sizeof(de), inode.addr[0]=nmeta
+    // data blocks: | de.inum=rootino, de.name="."; de.inum=rootino, de.name="..";
+    // de.inum=rootino, de.name=shortname;| 
     bzero(&de, sizeof(de));
     de.inum = xshort(inum);
     strncpy(de.name, shortname, DIRSIZ);
     iappend(rootino, &de, sizeof(de));
 
+    // 依次将fd中的内容分配到inum这个inode中，主要涉及inode的size一直累加，而且addr记录了其data所在的block address
+    // 主要任务：
+    // 1. 改变inum对应的inode中的size和addr数组，addr数组用于记录该file所在的block addr
+    // 2. 将文件的数据拷贝到 block addr的位置
     while((cc = read(fd, buf, sizeof(buf))) > 0)
       iappend(inum, buf, cc);
 
